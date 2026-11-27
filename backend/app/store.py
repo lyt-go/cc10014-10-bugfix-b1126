@@ -22,6 +22,8 @@ class Store:
         self._idempotent_log: dict[tuple, float] = {}
         # 跨模块锁：{resource_key: thread_id}  用于并发场景 tolerance
         self._resource_locks: dict[str, int] = {}
+        # 封存凭据登记：{seal_no: 封存边界}，档案入库与日志补报共用同一封存边界
+        self._seal_registry: dict[str, dict[str, Any]] = {}
 
     # ── 基础访问 ──
     def module_names(self) -> list[str]:
@@ -96,6 +98,36 @@ class Store:
         """释放资源锁。"""
         with self._lock:
             self._resource_locks.pop(resource_key, None)
+
+    # ── 封存凭据登记 ──
+    def register_seal(self, record: dict[str, Any]) -> None:
+        """登记或更新一条封存边界（凭据号唯一；后补纳入时合并到同一凭据）。"""
+        seal_no = record.get("seal_no", "")
+        with self._lock:
+            if not seal_no:
+                return
+            if seal_no in self._seal_registry:
+                self._seal_registry[seal_no].update(record)
+            else:
+                self._seal_registry[seal_no] = dict(record)
+
+    def get_seal(self, seal_no: str) -> dict[str, Any] | None:
+        with self._lock:
+            record = self._seal_registry.get(seal_no)
+            return dict(record) if record else None
+
+    def seals_for_process(self, process: str) -> list[dict[str, Any]]:
+        """返回某工序当前所有封存凭据（按封存时间排序）。"""
+        with self._lock:
+            records = [
+                dict(record) for record in self._seal_registry.values()
+                if record.get("process") == process
+            ]
+        return sorted(records, key=lambda r: r.get("sealed_at", 0.0))
+
+    def latest_seal_for_process(self, process: str) -> dict[str, Any] | None:
+        records = self.seals_for_process(process)
+        return records[-1] if records else None
 
     # ── 跨模块原子更新 ──
     def atomic_update(self, operations: list[dict]) -> list[dict] | None:

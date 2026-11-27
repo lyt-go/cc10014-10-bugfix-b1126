@@ -82,3 +82,56 @@ export async function fetchDependencyGraph(): Promise<{ nodes: unknown[]; edges:
   if (!response.ok) throw new Error('依赖图加载失败')
   return await response.json()
 }
+
+export type SealBoundary = {
+  ok: boolean
+  message: string
+  log_id: number
+  process: string
+  included: boolean
+  seal_no: string
+  pending_seal_no?: string
+  archive_id?: number
+  archive_name?: string
+  补交状态?: string
+  need_resubmit: boolean
+  process_seals: { seal_no: string; archive_id: number; archive_name: string; process: string }[]
+}
+
+/** 封存边界：工匠重新打开修缮日志时查询本条是否已纳入档案、下次是否需补交。 */
+export async function fetchSealBoundary(logId: number): Promise<SealBoundary> {
+  const response = await request(`/api/cross-module/seal-boundary/restoration_log/${logId}`)
+  if (!response.ok) throw new Error('封存边界查询失败')
+  return await response.json()
+}
+
+export type ArchiveCheck = {
+  ok: boolean
+  message: string
+  seal_no: string
+  process: string
+  archive: { id: number; 档案名称: string; 关联工序: string; status: string }
+  logs: { id: number; 施工日期: string; 对应工序: string; status: string; 封存凭据: string; 补交状态: string }[]
+  acceptance_records: { id: number; 验收工序: string; 封存凭据: string }[]
+  registry: Record<string, unknown> | null
+  mismatches: string[]
+}
+
+/** 台账核对：档案台账与修缮日志交班清单按同一封存凭据核对一致性。 */
+export async function fetchArchiveCheck(params: { archiveId?: number; sealNo?: string }): Promise<ArchiveCheck> {
+  const query = new URLSearchParams()
+  if (params.archiveId !== undefined) query.set('archive_id', String(params.archiveId))
+  if (params.sealNo) query.set('seal_no', params.sealNo)
+  const response = await request(`/api/cross-module/archive-check?${query.toString()}`)
+  if (!response.ok) throw new Error('台账核对失败')
+  return await response.json()
+}
+
+/** 为档案补登显式关联工序：消解仅有标题的老档案的工序归属歧义。 */
+export async function bindArchiveProcess(id: number, process: string): Promise<ActionResult> {
+  const response = await request(`/api/archive_mgmt/${id}/bind-process`, {
+    method: 'POST',
+    body: JSON.stringify({ process }),
+  })
+  return await response.json()
+}

@@ -34,6 +34,7 @@ def reset_store():
     # 清理幂等日志
     store._idempotent_log.clear()
     store._resource_locks.clear()
+    store._seal_registry.clear()
     # 清理非 seed 条目（只保留原始 seed 数据）
     from app.seed import SEED_ROWS
     for name in list(store._tables.keys()):
